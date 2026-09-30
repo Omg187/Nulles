@@ -12,18 +12,12 @@
     font-family: 'Courier New', monospace;
   }
 
-  #stage {
-    position: absolute; inset: 0;
-    width: 100vw; height: 100vh;
-    z-index: 1; background: #000;
-  }
+  #stage { position:absolute; inset:0; width:100vw; height:100vh; z-index:1; background:#000; }
   #stage video,
   #stage iframe {
-    position: absolute; inset: 0;
-    width: 100% !important; height: 100% !important;
-    border: 0;
-    object-fit: cover;
-    background: #000;
+    position:absolute; inset:0;
+    width:100% !important; height:100% !important;
+    border:0; object-fit:cover; background:#000;
   }
 
   #reveal {
@@ -34,57 +28,70 @@
     pointer-events: none;
     color: #fff; text-align: center;
     padding: 40px; box-sizing: border-box;
+    gap: 4px;
   }
+
   #reveal .line {
-    margin: 6px 0;
-    font-size: 26px;
-    letter-spacing: 1.5px;
+    font-size: 18px;
+    letter-spacing: 1px;
+    line-height: 1.4;
     text-shadow:
       0 0 6px rgba(0,0,0,0.95),
-      0 0 12px rgba(0,0,0,0.85),
-      0 0 24px rgba(0,0,0,0.7);
+      0 0 12px rgba(0,0,0,0.9),
+      0 0 24px rgba(0,0,0,0.75);
     opacity: 0; transform: translateY(6px);
     animation: fadein 700ms ease forwards;
+    max-width: 92vw;
+    word-break: break-word;
   }
-  #reveal .line.small { font-size: 20px; }
+
+  /* IP com fonte menor — discreto, mas legível */
+  #reveal .line.ip {
+    font-size: 14px;
+    letter-spacing: 0.5px;
+    opacity: 0;
+    color: #fff;
+  }
+  #reveal .line.ip.shown { animation: fadein 700ms ease forwards; }
+
+  #reveal .line.geo { font-size: 17px; }
+  #reveal .line.email { font-size: 16px; }
+  #reveal .line.time { font-size: 16px; }
+  #reveal .line.loc  { font-size: 14px; letter-spacing: 0.5px; }
   #reveal .line a { color: #fff; pointer-events: auto; text-decoration: underline; }
+  #reveal .line .dim { color: #cfcfcf; }
+
   @keyframes fadein { to { opacity: 1; transform: translateY(0); } }
 
-  /* barra de status quando autoplay é bloqueado */
   #tapstart {
-    position: fixed; inset: 0;
-    z-index: 3;
-    display: none;
-    justify-content: center; align-items: center;
-    background: rgba(0,0,0,0.6);
-    color: #fff; font-size: 22px;
-    cursor: pointer;
-    letter-spacing: 2px;
+    position: fixed; inset: 0; z-index: 3;
+    display: none; justify-content: center; align-items: center;
+    background: rgba(0,0,0,0.6); color: #fff; font-size: 20px;
+    cursor: pointer; letter-spacing: 2px;
   }
   #tapstart.visible { display: flex; }
 
   #unmute {
-    position: fixed;
-    right: 16px; bottom: 16px;
-    z-index: 4;
-    display: none;
-    background: rgba(0,0,0,0.7);
-    color: #fff;
-    border: 1px solid #fff;
-    padding: 10px 16px;
-    font-family: inherit; font-size: 14px;
-    cursor: pointer; letter-spacing: 1px;
+    position: fixed; right: 16px; bottom: 16px; z-index: 4;
+    display: none; background: rgba(0,0,0,0.7); color: #fff;
+    border: 1px solid #fff; padding: 10px 16px;
+    font-family: inherit; font-size: 13px; cursor: pointer; letter-spacing: 1px;
   }
   #unmute.visible { display: block; }
 
+  #signin {
+    position: fixed; left: 16px; bottom: 16px; z-index: 4;
+    display: none; background: rgba(0,0,0,0.7); color: #fff;
+    border: 1px solid #fff; padding: 10px 16px;
+    font-family: inherit; font-size: 13px; cursor: pointer; letter-spacing: 1px;
+  }
+  #signin.visible { display: block; }
+
   #err {
-    position: fixed;
-    left: 16px; bottom: 16px;
-    z-index: 4;
-    color: #f88; font-size: 13px;
-    background: rgba(0,0,0,0.7);
-    padding: 8px 12px;
-    max-width: 60vw;
+    position: fixed; left: 16px; top: 16px; z-index: 4;
+    color: #f88; font-size: 12px;
+    background: rgba(0,0,0,0.75);
+    padding: 6px 10px; max-width: 60vw;
     display: none;
   }
   #err.visible { display: block; }
@@ -93,46 +100,49 @@
 <body>
 
 <div id="stage"></div>
-
 <div id="reveal"></div>
-
 <div id="tapstart">toque para iniciar o vídeo</div>
 <button id="unmute">ativar som</button>
+<button id="signin">entrar com Google</button>
 <div id="err"></div>
 
 <script>
   // ============================================================
-  //  CONFIG — troque os valores abaixo
+  //  CONFIG
   // ============================================================
 
-  // 1) URL do MP4 (absoluta). Deixe vazio se for usar YouTube.
-  //    Exemplos:
-  //      "https://seu-dominio.com/video.mp4"
-  //      "https://drive.google.com/uc?export=download&id=FILE_ID"
+  // 1) URL absoluta do vídeo. Se ficar relativo (sem https://),
+  //    o código usa YouTube automaticamente.
   const VIDEO_URL = 'video.mp4';
 
-  // 2) ID do YouTube como FALLBACK. Usado se o MP4 falhar.
-  //    Deixe vazio para desativar o fallback.
+  // 2) YouTube fallback
   const YOUTUBE_FALLBACK_ID = 'sVjk5nrb_lI';
 
-  // 3) Email mostrado no segundo 21 (fixo; o navegador não expõe o do visitante).
-  const EMAIL_TO_SHOW = 'contato@exemplo.com';
+  // 3) Email do dono do site. Troque pelo SEU email real.
+  //    Este é o valor que aparece no segundo 21 se o visitante NÃO logar.
+  const OWNER_EMAIL = 'seuemail@dominio.com';
 
+  // 4) Google Sign-In (opcional). Se quiser capturar o email REAL do
+  //    visitante, preencha o Client ID abaixo. Senão, deixe vazio.
+  //    Como obter: https://console.cloud.google.com/apis/credentials
+  //    → Criar credencial → ID do cliente OAuth → Aplicativo da Web
+  //    → Origens JS autorizadas: seu domínio.
+  const GOOGLE_CLIENT_ID = '';
   // ============================================================
-  //  ESTADO — só RAM. Nada é gravado (sem storage/cookie/POST).
-  // ============================================================
-  const stage   = document.getElementById('stage');
-  const reveal  = document.getElementById('reveal');
-  const tap     = document.getElementById('tapstart');
-  const unmute  = document.getElementById('unmute');
-  const errBox  = document.getElementById('err');
+
+  const stage  = document.getElementById('stage');
+  const reveal = document.getElementById('reveal');
+  const tap    = document.getElementById('tapstart');
+  const unmute = document.getElementById('unmute');
+  const signinBtn = document.getElementById('signin');
+  const errBox = document.getElementById('err');
 
   const shown = new Set();
   let   geo   = null;
-  let   video = null;       // <video> nativo, se usar MP4
-  let   ytPlayer = null;    // IFrame API, se cair no fallback
-  let   clock = 0;          // cronômetro paralelo (segundos) — cobre YouTube e MP4
-  let   clockId = null;
+  let   visitorEmail = '';      // preenchido se o visitante logar
+  let   video = null;
+  let   ytPlayer = null;
+  let   clock = 0;
   let   started = false;
 
   function fail(msg) {
@@ -142,25 +152,54 @@
   }
 
   // ============================================================
-  //  CONSULTA DE IP — read-only, vive só em `geo`
+  //  IP — read-only, sem persistência
   // ============================================================
   const APIS = [
-    { url: 'https://ipwho.is/',       ok: d => d && d.success !== false,
-      map: d => ({ ip:d.ip, city:d.city, region:d.region, lat:d.latitude, lon:d.longitude }) },
-    { url: 'https://ipapi.co/json/',  ok: d => d && d.ip,
-      map: d => ({ ip:d.ip, city:d.city, region:d.region, lat:d.latitude, lon:d.longitude }) },
-    { url: 'https://ipinfo.io/json',  ok: d => d && d.ip,
-      map: d => { const [lat,lon]=(d.loc||',').split(',').map(Number);
-                  return { ip:d.ip, city:d.city, region:d.region, lat, lon }; } },
-    { url: 'http://ip-api.com/json/', ok: d => d && d.status === 'success',
-      map: d => ({ ip:d.query, city:d.city, region:d.regionName, lat:d.lat, lon:d.lon }) }
+    { url:'https://ipwho.is/',
+      ok: d => d && d.success !== false,
+      map: d => ({
+        ip: d.ip, city: d.city, region: d.region,
+        postal: d.postal, country: d.country, countryCode: d.country_code,
+        lat: d.latitude, lon: d.longitude,
+        tz: d.timezone && d.timezone.id, utc: d.timezone && d.timezone.utc,
+        isp: d.connection && d.connection.isp, asn: d.connection && d.connection.asn
+      })
+    },
+    { url:'https://ipapi.co/json/',
+      ok: d => d && d.ip,
+      map: d => ({
+        ip: d.ip, city: d.city, region: d.region,
+        postal: d.postal, country: d.country_name, countryCode: d.country_code,
+        lat: d.latitude, lon: d.longitude,
+        tz: d.timezone, utc: d.utc_offset,
+        isp: d.org, asn: d.asn
+      })
+    },
+    { url:'https://ipinfo.io/json',
+      ok: d => d && d.ip,
+      map: d => {
+        const [lat,lon] = (d.loc||',').split(',').map(Number);
+        return { ip:d.ip, city:d.city, region:d.region, postal:d.postal,
+                 country:d.country, countryCode:d.country,
+                 lat, lon, tz:d.timezone, utc:null, isp:d.org, asn:d.org };
+      }
+    },
+    { url:'http://ip-api.com/json/',
+      ok: d => d && d.status === 'success',
+      map: d => ({
+        ip: d.query, city: d.city, region: d.regionName,
+        postal: d.zip, country: d.country, countryCode: d.countryCode,
+        lat: d.lat, lon: d.lon, tz: d.timezone, utc: d.offset ? 'UTC'+d.offset/3600 : null,
+        isp: d.isp, asn: d.as
+      })
+    }
   ];
 
   async function lookup() {
     for (const api of APIS) {
       try {
         const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 4000);
+        const t = setTimeout(() => ctrl.abort(), 4500);
         const r = await fetch(api.url, { signal: ctrl.signal });
         clearTimeout(t);
         if (!r.ok) continue;
@@ -173,24 +212,77 @@
   lookup().then(d => { geo = d || {}; });
 
   // ============================================================
-  //  LINHAS — gatilho por segundo
+  //  Google Sign-In opcional — captura o email do visitante
+  //  se ele clicar. Sem client ID, fica escondido.
+  // ============================================================
+  function initSignIn() {
+    if (!GOOGLE_CLIENT_ID) return;
+    signinBtn.classList.add('visible');
+
+    const tag = document.createElement('script');
+    tag.src = 'https://accounts.google.com/gsi/client';
+    tag.async = true; tag.defer = true;
+    tag.onload = () => {
+      google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: resp => {
+          // JWT retornado. Decodifica o payload (base64) SEM salvar nada.
+          try {
+            const payload = JSON.parse(atob(resp.credential.split('.')[1]));
+            visitorEmail = payload.email || '';
+            signinBtn.textContent = 'logado: ' + visitorEmail;
+          } catch(_) {}
+        }
+      });
+    };
+    document.head.appendChild(tag);
+
+    signinBtn.onclick = () => {
+      google.accounts.id.prompt();
+    };
+  }
+  initSignIn();
+
+  // ============================================================
+  //  LINHAS — revelação cronometrada
   // ============================================================
   const LINES = [
-    { key:'ip',    at:18, html: () => 'IP: ' + ((geo && geo.ip) || '—') },
-    { key:'city',  at:20, html: () => 'Cidade: ' + ((geo && geo.city) || '—') +
-                                     (geo && geo.region ? ' — ' + geo.region : '') },
-    { key:'email', at:21, html: () => 'Email: ' + EMAIL_TO_SHOW },
-    { key:'time',  at:22, html: () => {
-        const n = new Date();
-        const p = x => String(x).padStart(2,'0');
-        return 'Hora local: ' + p(n.getHours()) + ':' + p(n.getMinutes()) + ':' + p(n.getSeconds());
+    { key:'ip', at:18, cls:'ip', html: () => {
+        const ip = (geo && geo.ip) || '—';
+        return 'IP <span class="dim">·</span> ' + ip;
       }
     },
-    { key:'loc',   at:23, html: () => {
-        if (!geo || geo.lat == null || geo.lon == null) return 'Localização: indisponível';
+    { key:'city', at:20, cls:'geo', html: () => {
+        if (!geo) return 'Cidade <span class="dim">·</span> —';
+        const parts = [geo.city, geo.region, geo.postal].filter(Boolean);
+        const pais  = geo.country ? ' (' + geo.countryCode + ')' : '';
+        return 'Local <span class="dim">·</span> ' + (parts.join(' — ') || '—') + pais;
+      }
+    },
+    { key:'email', at:21, cls:'email', html: () => {
+        const mail = visitorEmail || OWNER_EMAIL;
+        return 'Email <span class="dim">·</span> ' + mail;
+      }
+    },
+    { key:'time', at:22, cls:'time', html: () => {
+        const n = new Date();
+        const p = x => String(x).padStart(2,'0');
+        const hh = p(n.getHours()), mm = p(n.getMinutes()), ss = p(n.getSeconds());
+        const tz = (geo && geo.tz) ? ' <span class="dim">·</span> ' + geo.tz : '';
+        const utc = (geo && geo.utc) ? ' <span class="dim">·</span> ' + geo.utc : '';
+        return 'Hora <span class="dim">·</span> ' + hh + ':' + mm + ':' + ss + tz + utc;
+      }
+    },
+    { key:'loc', at:23, cls:'loc', html: () => {
+        if (!geo || geo.lat == null || geo.lon == null)
+          return 'Coordenadas <span class="dim">·</span> indisponível';
+        const lat = Number(geo.lat).toFixed(4);
+        const lon = Number(geo.lon).toFixed(4);
         const u = 'https://www.google.com/maps?q=' + geo.lat + ',' + geo.lon;
-        return '<a href="' + u + '" target="_blank" rel="noopener">' +
-               'Ver localização aproximada no Google Maps ↗</a>';
+        const isp = geo.isp ? ' <span class="dim">·</span> ' + geo.isp : '';
+        const asn = geo.asn ? ' <span class="dim">·</span> AS' + String(geo.asn).replace(/^AS/i,'') : '';
+        return 'Lat ' + lat + ' / Lon ' + lon + isp + asn +
+               '<br><a href="' + u + '" target="_blank" rel="noopener">abrir no Google Maps ↗</a>';
       }
     }
   ];
@@ -199,7 +291,7 @@
     if (shown.has(l.key)) return;
     shown.add(l.key);
     const el = document.createElement('div');
-    el.className = 'line' + (l.key === 'loc' ? ' small' : '');
+    el.className = 'line ' + (l.cls || '');
     el.innerHTML = l.html();
     reveal.appendChild(el);
   }
@@ -212,71 +304,61 @@
     if (started) return;
     started = true;
     tick();
-    clockId = setInterval(() => { clock++; tick(); }, 1000);
+    setInterval(() => { clock++; tick(); }, 1000);
   }
 
   // ============================================================
-  //  PLAYER 1 — <video> nativo
+  //  PLAYER nativo
   // ============================================================
   function buildNative() {
     video = document.createElement('video');
-    video.id = 'player';
     video.controls = true;
     video.autoplay = true;
-    video.muted = true;          // Chrome exige mudo para autoplay
+    video.muted = true;
     video.playsInline = true;
     video.preload = 'auto';
-    video.setAttribute('playsinline', '');
-    video.setAttribute('webkit-playsinline', '');
+    video.setAttribute('playsinline','');
+    video.setAttribute('webkit-playsinline','');
 
     const src = document.createElement('source');
-    src.src = VIDEO_URL;
-    src.type = 'video/mp4';
+    src.src = VIDEO_URL; src.type = 'video/mp4';
     video.appendChild(src);
-    video.appendChild(document.createTextNode('Seu navegador não suporta vídeo HTML5.'));
 
     video.addEventListener('error', () => {
-      fail('MP4 falhou: ' + VIDEO_URL);
+      fail('MP4 falhou. Usando YouTube.');
       buildYouTube();
     });
     video.addEventListener('play', () => {
-      startClock();
-      unmute.classList.add('visible');
+      startClock(); unmute.classList.add('visible');
     });
-    // cronômetro paralelo pela posição do vídeo (caso autoplay toque sem 'play' disparar)
     video.addEventListener('timeupdate', () => {
-      clock = Math.floor(video.currentTime);
-      tick();
+      clock = Math.floor(video.currentTime); tick();
     });
     video.addEventListener('seeked', () => {
-      clock = Math.floor(video.currentTime);
-      tick();
+      clock = Math.floor(video.currentTime); tick();
     });
 
     stage.appendChild(video);
 
-    // tenta dar play; se o Chrome bloquear, mostra "toque para iniciar"
     const p = video.play();
-    if (p && p.catch) {
-      p.catch(() => {
-        tap.classList.add('visible');
-        tap.onclick = () => {
-          tap.classList.remove('visible');
-          video.muted = true;
-          video.play().catch(() => {});
-        };
-      });
-    }
+    if (p && p.catch) p.catch(() => {
+      tap.classList.add('visible');
+      tap.onclick = () => {
+        tap.classList.remove('visible');
+        video.muted = true;
+        video.play().catch(()=>{});
+      };
+    });
 
     unmute.onclick = () => {
       video.muted = false;
-      video.play().catch(() => {});
+      video.play().catch(()=>{});
       unmute.classList.remove('visible');
     };
   }
 
   // ============================================================
-  //  PLAYER 2 — YouTube IFrame API (fallback)
+  //  PLAYER YouTube (fallback)
   // ============================================================
   function buildYouTube() {
     if (!YOUTUBE_FALLBACK_ID) return;
@@ -299,12 +381,9 @@
       playerVars: { autoplay:1, controls:1, rel:0, modestbranding:1, mute:1 },
       events: {
         onReady: e => { e.target.mute(); e.target.playVideo(); startClock(); },
-        onStateChange: e => {
-          if (e.data === YT.PlayerState.PLAYING) startClock();
-        }
+        onStateChange: e => { if (e.data === YT.PlayerState.PLAYING) startClock(); }
       }
     });
-    // poll extra — cobre o caso do estado PLAYING não disparar
     setInterval(() => {
       if (ytPlayer && ytPlayer.getCurrentTime) {
         const t = Math.floor(ytPlayer.getCurrentTime());
@@ -314,11 +393,10 @@
   }
 
   // ============================================================
-  //  BOOT — escolhe o player
+  //  BOOT
   // ============================================================
   if (VIDEO_URL && !/^https?:\/\//i.test(VIDEO_URL)) {
-    // src relativo dentro do Google Sites nunca resolve. Cai direto no YouTube.
-    fail('VIDEO_URL precisa ser URL absoluta (https://...). Usando YouTube.');
+    fail('VIDEO_URL relativo. Use https:// ou aceite o YouTube.');
     buildYouTube();
   } else if (VIDEO_URL) {
     buildNative();
@@ -327,10 +405,8 @@
   }
 
   // ============================================================
-  //  GARANTIA DE NÃO-PERSISTÊNCIA
-  //  Sem localStorage, sessionStorage, cookies, indexedDB,
-  //  Cache API, POST, sendBeacon, WebSocket.
-  //  `geo` vive só nesta aba e morre ao fechar/recarregar.
+  //  NÃO-PERSISTÊNCIA: sem storage, cookie, indexedDB, POST.
+  //  `geo` e `visitorEmail` vivem só na RAM e morrem ao fechar.
   // ============================================================
 </script>
 
