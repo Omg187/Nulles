@@ -8,39 +8,33 @@
   html, body {
     margin: 0; padding: 0;
     width: 100%; height: 100%;
-    background: #000;
-    overflow: hidden;
-  }
-
-  #player {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100vw;
-    height: 100vh;
-    object-fit: cover;      /* preenche a tela; use 'contain' se não quiser corte */
-    background: #000;
-    z-index: 1;
-  }
-
-  /* camada de texto sobre o vídeo — sem fundo, só sombra para leitura */
-  #reveal {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    pointer-events: none;   /* cliques passam pro vídeo, exceto nos links */
+    background: #000; overflow: hidden;
     font-family: 'Courier New', monospace;
-    color: #fff;
-    text-align: center;
-    padding: 40px;
-    box-sizing: border-box;
   }
 
+  #stage {
+    position: absolute; inset: 0;
+    width: 100vw; height: 100vh;
+    z-index: 1; background: #000;
+  }
+  #stage video,
+  #stage iframe {
+    position: absolute; inset: 0;
+    width: 100% !important; height: 100% !important;
+    border: 0;
+    object-fit: cover;
+    background: #000;
+  }
+
+  #reveal {
+    position: fixed; inset: 0;
+    z-index: 2;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    pointer-events: none;
+    color: #fff; text-align: center;
+    padding: 40px; box-sizing: border-box;
+  }
   #reveal .line {
     margin: 6px 0;
     font-size: 26px;
@@ -49,191 +43,294 @@
       0 0 6px rgba(0,0,0,0.95),
       0 0 12px rgba(0,0,0,0.85),
       0 0 24px rgba(0,0,0,0.7);
-    opacity: 0;
-    transform: translateY(6px);
+    opacity: 0; transform: translateY(6px);
     animation: fadein 700ms ease forwards;
   }
-
   #reveal .line.small { font-size: 20px; }
-  #reveal .line a {
-    color: #fff;
-    pointer-events: auto;
-    text-decoration: underline;
-  }
+  #reveal .line a { color: #fff; pointer-events: auto; text-decoration: underline; }
+  @keyframes fadein { to { opacity: 1; transform: translateY(0); } }
 
-  @keyframes fadein {
-    to { opacity: 1; transform: translateY(0); }
+  /* barra de status quando autoplay é bloqueado */
+  #tapstart {
+    position: fixed; inset: 0;
+    z-index: 3;
+    display: none;
+    justify-content: center; align-items: center;
+    background: rgba(0,0,0,0.6);
+    color: #fff; font-size: 22px;
+    cursor: pointer;
+    letter-spacing: 2px;
   }
+  #tapstart.visible { display: flex; }
+
+  #unmute {
+    position: fixed;
+    right: 16px; bottom: 16px;
+    z-index: 4;
+    display: none;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    border: 1px solid #fff;
+    padding: 10px 16px;
+    font-family: inherit; font-size: 14px;
+    cursor: pointer; letter-spacing: 1px;
+  }
+  #unmute.visible { display: block; }
+
+  #err {
+    position: fixed;
+    left: 16px; bottom: 16px;
+    z-index: 4;
+    color: #f88; font-size: 13px;
+    background: rgba(0,0,0,0.7);
+    padding: 8px 12px;
+    max-width: 60vw;
+    display: none;
+  }
+  #err.visible { display: block; }
 </style>
 </head>
 <body>
 
-<!-- Troque o src pelo caminho do seu vídeo.
-     Local:  "video.mp4"
-     Remoto: "https://seu-dominio.com/video.mp4" -->
-<video id="player" src="video.mp4" controls autoplay playsinline preload="auto"></video>
+<div id="stage"></div>
 
 <div id="reveal"></div>
 
+<div id="tapstart">toque para iniciar o vídeo</div>
+<button id="unmute">ativar som</button>
+<div id="err"></div>
+
 <script>
   // ============================================================
-  //  CONFIG
+  //  CONFIG — troque os valores abaixo
   // ============================================================
-  // Email que aparece no segundo 21. Não é o email do visitante
-  // (não é acessível pelo navegador). É o valor que VOCÊ define.
+
+  // 1) URL do MP4 (absoluta). Deixe vazio se for usar YouTube.
+  //    Exemplos:
+  //      "https://seu-dominio.com/video.mp4"
+  //      "https://drive.google.com/uc?export=download&id=FILE_ID"
+  const VIDEO_URL = 'video.mp4';
+
+  // 2) ID do YouTube como FALLBACK. Usado se o MP4 falhar.
+  //    Deixe vazio para desativar o fallback.
+  const YOUTUBE_FALLBACK_ID = 'sVjk5nrb_lI';
+
+  // 3) Email mostrado no segundo 21 (fixo; o navegador não expõe o do visitante).
   const EMAIL_TO_SHOW = 'contato@exemplo.com';
 
   // ============================================================
-  //  ESTADO — memória apenas. Nada é gravado em disco/cookie/storage.
+  //  ESTADO — só RAM. Nada é gravado (sem storage/cookie/POST).
   // ============================================================
-  const video  = document.getElementById('player');
-  const reveal = document.getElementById('reveal');
-  const shown  = new Set();     // chaves já reveladas nesta sessão
-  let   geo    = null;          // resultado da consulta de IP (só em RAM)
+  const stage   = document.getElementById('stage');
+  const reveal  = document.getElementById('reveal');
+  const tap     = document.getElementById('tapstart');
+  const unmute  = document.getElementById('unmute');
+  const errBox  = document.getElementById('err');
+
+  const shown = new Set();
+  let   geo   = null;
+  let   video = null;       // <video> nativo, se usar MP4
+  let   ytPlayer = null;    // IFrame API, se cair no fallback
+  let   clock = 0;          // cronômetro paralelo (segundos) — cobre YouTube e MP4
+  let   clockId = null;
+  let   started = false;
+
+  function fail(msg) {
+    errBox.textContent = msg;
+    errBox.classList.add('visible');
+    console.warn('[player]', msg);
+  }
 
   // ============================================================
-  //  CONSULTA DE IP — read-only. A resposta vive só na variável `geo`.
+  //  CONSULTA DE IP — read-only, vive só em `geo`
   // ============================================================
   const APIS = [
-    {
-      name: 'ipwho.is',
-      url:  'https://ipwho.is/',
-      ok:   d => d && d.success !== false,
-      map:  d => ({
-        ip:    d.ip,
-        city:  d.city,
-        region:d.region,
-        lat:   d.latitude,
-        lon:   d.longitude
-      })
-    },
-    {
-      name: 'ipapi.co',
-      url:  'https://ipapi.co/json/',
-      ok:   d => d && d.ip,
-      map:  d => ({
-        ip:    d.ip,
-        city:  d.city,
-        region:d.region,
-        lat:   d.latitude,
-        lon:   d.longitude
-      })
-    },
-    {
-      name: 'ipinfo.io',
-      url:  'https://ipinfo.io/json',
-      ok:   d => d && d.ip,
-      map:  d => {
-        const [lat, lon] = (d.loc || ',').split(',').map(Number);
-        return { ip: d.ip, city: d.city, region: d.region, lat, lon };
-      }
-    },
-    {
-      name: 'ip-api.com',
-      url:  'http://ip-api.com/json/',
-      ok:   d => d && d.status === 'success',
-      map:  d => ({
-        ip:    d.query,
-        city:  d.city,
-        region:d.regionName,
-        lat:   d.lat,
-        lon:   d.lon
-      })
-    }
+    { url: 'https://ipwho.is/',       ok: d => d && d.success !== false,
+      map: d => ({ ip:d.ip, city:d.city, region:d.region, lat:d.latitude, lon:d.longitude }) },
+    { url: 'https://ipapi.co/json/',  ok: d => d && d.ip,
+      map: d => ({ ip:d.ip, city:d.city, region:d.region, lat:d.latitude, lon:d.longitude }) },
+    { url: 'https://ipinfo.io/json',  ok: d => d && d.ip,
+      map: d => { const [lat,lon]=(d.loc||',').split(',').map(Number);
+                  return { ip:d.ip, city:d.city, region:d.region, lat, lon }; } },
+    { url: 'http://ip-api.com/json/', ok: d => d && d.status === 'success',
+      map: d => ({ ip:d.query, city:d.city, region:d.regionName, lat:d.lat, lon:d.lon }) }
   ];
 
   async function lookup() {
     for (const api of APIS) {
       try {
-        const ctrl  = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 4000);
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 4000);
         const r = await fetch(api.url, { signal: ctrl.signal });
-        clearTimeout(timer);
+        clearTimeout(t);
         if (!r.ok) continue;
         const raw = await r.json();
         if (api.ok(raw)) return api.map(raw);
-      } catch (_) { /* tenta a próxima */ }
+      } catch(_) {}
     }
     return null;
   }
-
-  // Dispara a consulta o quanto antes, para ter o dado pronto no 18s.
-  // A resposta fica só em RAM e morre quando a aba fecha.
   lookup().then(d => { geo = d || {}; });
 
   // ============================================================
-  //  LINHAS REVELADAS — gatilho por tempo do vídeo
+  //  LINHAS — gatilho por segundo
   // ============================================================
   const LINES = [
-    {
-      key: 'ip',
-      at:  18,
-      html: () => 'IP: ' + (geo && geo.ip || '—')
-    },
-    {
-      key: 'city',
-      at:  20,
-      html: () => 'Cidade: ' + (geo && geo.city || '—') +
-                 (geo && geo.region ? ' — ' + geo.region : '')
-    },
-    {
-      key: 'email',
-      at:  21,
-      html: () => 'Email: ' + EMAIL_TO_SHOW
-    },
-    {
-      key: 'time',
-      at:  22,
-      html: () => {
-        const now = new Date();
-        const hh  = String(now.getHours()).padStart(2,'0');
-        const mm  = String(now.getMinutes()).padStart(2,'0');
-        const ss  = String(now.getSeconds()).padStart(2,'0');
-        return 'Hora local: ' + hh + ':' + mm + ':' + ss;
+    { key:'ip',    at:18, html: () => 'IP: ' + ((geo && geo.ip) || '—') },
+    { key:'city',  at:20, html: () => 'Cidade: ' + ((geo && geo.city) || '—') +
+                                     (geo && geo.region ? ' — ' + geo.region : '') },
+    { key:'email', at:21, html: () => 'Email: ' + EMAIL_TO_SHOW },
+    { key:'time',  at:22, html: () => {
+        const n = new Date();
+        const p = x => String(x).padStart(2,'0');
+        return 'Hora local: ' + p(n.getHours()) + ':' + p(n.getMinutes()) + ':' + p(n.getSeconds());
       }
     },
-    {
-      key: 'loc',
-      at:  23,
-      html: () => {
-        if (!geo || geo.lat == null || geo.lon == null)
-          return 'Localização: indisponível';
-        const url = 'https://www.google.com/maps?q=' + geo.lat + ',' + geo.lon;
-        return '<a href="' + url + '" target="_blank" rel="noopener">' +
+    { key:'loc',   at:23, html: () => {
+        if (!geo || geo.lat == null || geo.lon == null) return 'Localização: indisponível';
+        const u = 'https://www.google.com/maps?q=' + geo.lat + ',' + geo.lon;
+        return '<a href="' + u + '" target="_blank" rel="noopener">' +
                'Ver localização aproximada no Google Maps ↗</a>';
       }
     }
   ];
 
-  function revealLine(line) {
-    if (shown.has(line.key)) return;
-    shown.add(line.key);
-
+  function revealLine(l) {
+    if (shown.has(l.key)) return;
+    shown.add(l.key);
     const el = document.createElement('div');
-    el.className = 'line' + (line.key === 'loc' ? ' small' : '');
-    el.innerHTML = line.html();
+    el.className = 'line' + (l.key === 'loc' ? ' small' : '');
+    el.innerHTML = l.html();
     reveal.appendChild(el);
   }
 
-  function checkTimeline() {
-    const t = video.currentTime;
-    for (const line of LINES) {
-      if (!shown.has(line.key) && t >= line.at) revealLine(line);
-    }
+  function tick() {
+    for (const l of LINES) if (!shown.has(l.key) && clock >= l.at) revealLine(l);
   }
 
-  video.addEventListener('timeupdate', checkTimeline);
-  video.addEventListener('seeked',     checkTimeline);
+  function startClock() {
+    if (started) return;
+    started = true;
+    tick();
+    clockId = setInterval(() => { clock++; tick(); }, 1000);
+  }
+
+  // ============================================================
+  //  PLAYER 1 — <video> nativo
+  // ============================================================
+  function buildNative() {
+    video = document.createElement('video');
+    video.id = 'player';
+    video.controls = true;
+    video.autoplay = true;
+    video.muted = true;          // Chrome exige mudo para autoplay
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+
+    const src = document.createElement('source');
+    src.src = VIDEO_URL;
+    src.type = 'video/mp4';
+    video.appendChild(src);
+    video.appendChild(document.createTextNode('Seu navegador não suporta vídeo HTML5.'));
+
+    video.addEventListener('error', () => {
+      fail('MP4 falhou: ' + VIDEO_URL);
+      buildYouTube();
+    });
+    video.addEventListener('play', () => {
+      startClock();
+      unmute.classList.add('visible');
+    });
+    // cronômetro paralelo pela posição do vídeo (caso autoplay toque sem 'play' disparar)
+    video.addEventListener('timeupdate', () => {
+      clock = Math.floor(video.currentTime);
+      tick();
+    });
+    video.addEventListener('seeked', () => {
+      clock = Math.floor(video.currentTime);
+      tick();
+    });
+
+    stage.appendChild(video);
+
+    // tenta dar play; se o Chrome bloquear, mostra "toque para iniciar"
+    const p = video.play();
+    if (p && p.catch) {
+      p.catch(() => {
+        tap.classList.add('visible');
+        tap.onclick = () => {
+          tap.classList.remove('visible');
+          video.muted = true;
+          video.play().catch(() => {});
+        };
+      });
+    }
+
+    unmute.onclick = () => {
+      video.muted = false;
+      video.play().catch(() => {});
+      unmute.classList.remove('visible');
+    };
+  }
+
+  // ============================================================
+  //  PLAYER 2 — YouTube IFrame API (fallback)
+  // ============================================================
+  function buildYouTube() {
+    if (!YOUTUBE_FALLBACK_ID) return;
+    stage.innerHTML = '';
+    const holder = document.createElement('div');
+    holder.id = 'ytplayer';
+    holder.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+    stage.appendChild(holder);
+
+    if (window.YT && window.YT.Player) return makeYT();
+    const tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+    window.onYouTubeIframeAPIReady = makeYT;
+  }
+
+  function makeYT() {
+    ytPlayer = new YT.Player('ytplayer', {
+      videoId: YOUTUBE_FALLBACK_ID,
+      playerVars: { autoplay:1, controls:1, rel:0, modestbranding:1, mute:1 },
+      events: {
+        onReady: e => { e.target.mute(); e.target.playVideo(); startClock(); },
+        onStateChange: e => {
+          if (e.data === YT.PlayerState.PLAYING) startClock();
+        }
+      }
+    });
+    // poll extra — cobre o caso do estado PLAYING não disparar
+    setInterval(() => {
+      if (ytPlayer && ytPlayer.getCurrentTime) {
+        const t = Math.floor(ytPlayer.getCurrentTime());
+        if (t > clock) { clock = t; tick(); }
+      }
+    }, 500);
+  }
+
+  // ============================================================
+  //  BOOT — escolhe o player
+  // ============================================================
+  if (VIDEO_URL && !/^https?:\/\//i.test(VIDEO_URL)) {
+    // src relativo dentro do Google Sites nunca resolve. Cai direto no YouTube.
+    fail('VIDEO_URL precisa ser URL absoluta (https://...). Usando YouTube.');
+    buildYouTube();
+  } else if (VIDEO_URL) {
+    buildNative();
+  } else {
+    buildYouTube();
+  }
 
   // ============================================================
   //  GARANTIA DE NÃO-PERSISTÊNCIA
-  //  Nada abaixo grava dado nenhum. Comentário só para auditoria.
-  //  - Sem localStorage / sessionStorage
-  //  - Sem cookies
-  //  - Sem IndexedDB / Cache API
-  //  - Sem POST / sendBeacon
-  //  A variável `geo` vive apenas na memória desta aba e é
-  //  descartada ao fechar / recarregar.
+  //  Sem localStorage, sessionStorage, cookies, indexedDB,
+  //  Cache API, POST, sendBeacon, WebSocket.
+  //  `geo` vive só nesta aba e morre ao fechar/recarregar.
   // ============================================================
 </script>
 
